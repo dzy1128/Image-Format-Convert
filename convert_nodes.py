@@ -192,7 +192,7 @@ class ImageFormatInfo:
     
     def get_format_info(self, images):
         """
-        获取图片格式信息
+        获取详细的图片格式信息
         """
         if not isinstance(images, torch.Tensor):
             images = torch.tensor(images)
@@ -207,21 +207,114 @@ class ImageFormatInfo:
             image_tensor = images[i]
             height, width, channels = image_tensor.shape
             
-            # 判断可能的格式类型
-            if channels == 1:
-                format_type = "灰度图"
-            elif channels == 3:
-                format_type = "RGB"
-            elif channels == 4:
-                format_type = "RGBA"
-            else:
-                format_type = f"{channels}通道"
+            # 基本信息
+            info_dict = {
+                "图片序号": i + 1,
+                "尺寸": f"{width} × {height}",
+                "总像素": width * height,
+                "通道数": channels,
+                "数据类型": str(image_tensor.dtype),
+                "设备": str(image_tensor.device)
+            }
             
-            info = f"图片 {i+1}: 尺寸 {width}x{height}, 格式 {format_type}"
-            info_list.append(info)
+            # 判断色彩格式类型
+            if channels == 1:
+                color_format = "灰度图 (Grayscale)"
+                color_space = "L"
+            elif channels == 3:
+                color_format = "彩色图 (RGB)"
+                color_space = "RGB"
+            elif channels == 4:
+                color_format = "带透明度彩色图 (RGBA)"
+                color_space = "RGBA"
+            else:
+                color_format = f"多通道图像 ({channels}通道)"
+                color_space = f"{channels}C"
+            
+            info_dict["色彩格式"] = color_format
+            info_dict["色彩空间"] = color_space
+            
+            # 数值范围分析
+            min_val = float(image_tensor.min())
+            max_val = float(image_tensor.max())
+            mean_val = float(image_tensor.mean())
+            
+            info_dict["数值范围"] = f"{min_val:.3f} ~ {max_val:.3f}"
+            info_dict["平均值"] = f"{mean_val:.3f}"
+            
+            # 判断数值类型
+            if min_val >= 0 and max_val <= 1.0:
+                value_type = "标准化 (0-1)"
+            elif min_val >= 0 and max_val <= 255:
+                value_type = "8位整数 (0-255)"
+            else:
+                value_type = "自定义范围"
+            
+            info_dict["数值类型"] = value_type
+            
+            # 透明度分析（仅适用于RGBA）
+            if channels == 4:
+                alpha_channel = image_tensor[:, :, 3]
+                alpha_min = float(alpha_channel.min())
+                alpha_max = float(alpha_channel.max())
+                alpha_mean = float(alpha_channel.mean())
+                
+                if alpha_min == alpha_max == 1.0:
+                    transparency_info = "完全不透明"
+                elif alpha_min == alpha_max == 0.0:
+                    transparency_info = "完全透明"
+                elif alpha_min == 0.0 and alpha_max == 1.0:
+                    transparency_info = f"部分透明 (平均: {alpha_mean:.3f})"
+                else:
+                    transparency_info = f"透明度: {alpha_min:.3f} ~ {alpha_max:.3f} (平均: {alpha_mean:.3f})"
+                
+                info_dict["透明度"] = transparency_info
+            
+            # 内存占用
+            memory_mb = image_tensor.element_size() * image_tensor.nelement() / (1024 * 1024)
+            info_dict["内存占用"] = f"{memory_mb:.2f} MB"
+            
+            # 推荐的输出格式
+            recommended_formats = []
+            if channels == 1:
+                recommended_formats = ["PNG", "JPEG", "TIFF"]
+            elif channels == 3:
+                recommended_formats = ["JPEG", "PNG", "WEBP"]
+            elif channels == 4:
+                recommended_formats = ["PNG", "WEBP", "TIFF"]
+            
+            info_dict["推荐格式"] = ", ".join(recommended_formats)
+            
+            # 格式化输出
+            info_lines = [f"📷 图片 {i+1} 详细信息:"]
+            info_lines.append("=" * 30)
+            
+            for key, value in info_dict.items():
+                if key != "图片序号":
+                    info_lines.append(f"{key}: {value}")
+            
+            info_lines.append("")  # 空行分隔
+            
+            info_list.extend(info_lines)
+        
+        # 批量总结信息
+        if batch_size > 1:
+            summary_lines = [
+                f"📊 批量处理总结:",
+                "=" * 30,
+                f"图片总数: {batch_size}",
+                f"总内存占用: {sum(img.element_size() * img.nelement() for img in images) / (1024 * 1024):.2f} MB"
+            ]
+            
+            # 检查格式一致性
+            first_shape = images[0].shape
+            consistent_format = all(img.shape == first_shape for img in images)
+            summary_lines.append(f"格式一致性: {'✅ 一致' if consistent_format else '❌ 不一致'}")
+            
+            info_list.extend(summary_lines)
         
         result_info = "\n".join(info_list)
-        print(f"图片格式信息:\n{result_info}")
+        print(f"\n🔍 图片格式分析结果:\n{result_info}")
         
         return (result_info,)
 
