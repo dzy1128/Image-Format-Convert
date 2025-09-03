@@ -234,6 +234,6 @@ NODE_CLASS_MAPPINGS = {
 
 # 节点显示名称
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "ImageFormatConverter": "图片格式转换器",
-    "ImageFormatInfo": "图片格式信息",
+    "ImageFormatConverter": "Image Format Converter",
+    "ImageFormatInfo": "Image Format Info",
 }
