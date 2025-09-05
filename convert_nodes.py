@@ -319,14 +319,113 @@ class ImageFormatInfo:
         return (result_info,)
 
 
+class ImageBatchCombiner:
+    """
+    图片批量组合节点
+    将最多5张图片组合成一个batch，保持原始尺寸
+    """
+    
+    def __init__(self):
+        pass
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image1": ("IMAGE",),  # 第一张图片（必选）
+            },
+            "optional": {
+                "image2": ("IMAGE",),  # 第二张图片（可选）
+                "image3": ("IMAGE",),  # 第三张图片（可选）
+                "image4": ("IMAGE",),  # 第四张图片（可选）
+                "image5": ("IMAGE",),  # 第五张图片（可选）
+            },
+        }
+    
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image_batch",)
+    FUNCTION = "combine_images"
+    CATEGORY = "image/batch"
+    
+    def combine_images(self, image1, image2=None, image3=None, image4=None, image5=None):
+        """
+        将输入的图片组合成一个batch
+        
+        Args:
+            image1: 第一张图片（必选）
+            image2-image5: 其他图片（可选）
+            
+        Returns:
+            组合后的图片batch
+        """
+        # 收集所有非空的图片
+        images_list = [image1]
+        
+        for img in [image2, image3, image4, image5]:
+            if img is not None:
+                images_list.append(img)
+        
+        # 确保所有输入都是torch张量
+        processed_images = []
+        for img in images_list:
+            if not isinstance(img, torch.Tensor):
+                img = torch.tensor(img)
+            
+            # 如果是单张图片（3维），添加batch维度
+            if len(img.shape) == 3:
+                img = img.unsqueeze(0)
+            
+            # 如果输入本身已经是batch，需要分解
+            for i in range(img.shape[0]):
+                processed_images.append(img[i])
+        
+        # 检查所有图片的通道数是否一致
+        channels = processed_images[0].shape[-1]
+        for i, img in enumerate(processed_images):
+            if img.shape[-1] != channels:
+                # 如果通道数不一致，统一转换为RGB（3通道）
+                if img.shape[-1] == 1:  # 灰度图转RGB
+                    img = img.repeat(1, 1, 3)
+                elif img.shape[-1] == 4:  # RGBA转RGB（去除alpha通道）
+                    img = img[:, :, :3]
+                processed_images[i] = img
+        
+        # 重新检查通道数
+        channels = processed_images[0].shape[-1]
+        final_images = []
+        
+        for img in processed_images:
+            # 确保所有图片通道数一致
+            if img.shape[-1] != channels:
+                if channels == 3 and img.shape[-1] == 1:
+                    img = img.repeat(1, 1, 3)
+                elif channels == 3 and img.shape[-1] == 4:
+                    img = img[:, :, :3]
+            final_images.append(img)
+        
+        # 组合成batch - 保持每张图片的原始尺寸
+        result_batch = torch.stack(final_images, dim=0)
+        
+        print(f"🔄 图片批量组合完成:")
+        print(f"   输入图片数量: {len(final_images)}")
+        print(f"   输出batch形状: {result_batch.shape}")
+        print(f"   各图片尺寸:")
+        for i, img in enumerate(final_images):
+            print(f"     图片{i+1}: {img.shape[1]}×{img.shape[0]}×{img.shape[2]}")
+        
+        return (result_batch,)
+
+
 # 节点映射
 NODE_CLASS_MAPPINGS = {
     "ImageFormatConverter": ImageFormatConverter,
     "ImageFormatInfo": ImageFormatInfo,
+    "ImageBatchCombiner": ImageBatchCombiner,
 }
 
 # 节点显示名称
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ImageFormatConverter": "Image Format Converter",
     "ImageFormatInfo": "Image Format Info",
+    "ImageBatchCombiner": "Image Batch Combiner",
 }
