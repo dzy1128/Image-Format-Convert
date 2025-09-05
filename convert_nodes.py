@@ -345,6 +345,7 @@ class ImageBatchCombiner:
     
     RETURN_TYPES = ("IMAGE",)
     RETURN_NAMES = ("image_batch",)
+    OUTPUT_IS_LIST = (True,)
     FUNCTION = "combine_images"
     CATEGORY = "image/batch"
     
@@ -417,21 +418,35 @@ class ImageBatchCombiner:
         
         if same_size:
             # 所有图片尺寸相同，可以使用标准batch格式
-            result_batch = torch.stack(final_images, dim=0)
-            print(f"   ✅ 尺寸一致，输出batch形状: {result_batch.shape}")
-            return (result_batch,)
+            if size_handling == "keep_original":
+                # 返回图片列表（保持原始尺寸）
+                result_list = []
+                for img in final_images:
+                    result_list.append(img.unsqueeze(0))
+                print(f"   ✅ 尺寸一致，输出图片列表，每张图片保持原始尺寸")
+                for i, img in enumerate(final_images):
+                    print(f"     图片{i+1}: {img.shape[1]}×{img.shape[0]}×{img.shape[2]}")
+                return (result_list,)
+            else:
+                # 返回标准batch
+                result_batch = torch.stack(final_images, dim=0)
+                print(f"   ✅ 尺寸一致，输出标准batch形状: {result_batch.shape}")
+                return ([result_batch],)
         else:
             # 图片尺寸不同，根据用户选择的处理方式
             if size_handling == "keep_original":
-                # 保持原始尺寸 - 返回第一张图片并警告
-                print(f"   ⚠️  图片尺寸不同，选择保持原始尺寸模式")
-                print(f"   ❌ 由于ComfyUI batch要求统一尺寸，只能返回第一张图片")
-                print(f"   建议：使用'pad_to_largest'模式或确保输入图片尺寸相同")
+                # 保持原始尺寸 - 返回图片列表
+                print(f"   ✅ 图片尺寸不同，保持原始尺寸输出为图片列表")
                 
-                # 只返回第一张图片作为batch
-                result_batch = final_images[0].unsqueeze(0)
-                print(f"   📤 输出第一张图片，batch形状: {result_batch.shape}")
-                return (result_batch,)
+                result_list = []
+                for i, img in enumerate(final_images):
+                    # 为每张图片添加batch维度
+                    batched_img = img.unsqueeze(0)
+                    result_list.append(batched_img)
+                    print(f"     图片{i+1}: 保持尺寸 {img.shape[1]}×{img.shape[0]}×{img.shape[2]}")
+                
+                print(f"   📤 输出图片列表，包含{len(result_list)}张图片，每张保持原始尺寸")
+                return (result_list,)
             
             elif size_handling == "pad_to_largest":
                 # 填充到最大尺寸模式
@@ -458,7 +473,7 @@ class ImageBatchCombiner:
                 # 现在所有图片尺寸相同，可以使用stack
                 result_batch = torch.stack(padded_images, dim=0)
                 print(f"   ✅ 填充完成，输出batch形状: {result_batch.shape}")
-                return (result_batch,)
+                return ([result_batch],)
 
 
 # 节点映射
