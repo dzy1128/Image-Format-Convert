@@ -333,6 +333,7 @@ class ImageBatchCombiner:
         return {
             "required": {
                 "image1": ("IMAGE",),  # 第一张图片（必选）
+                "size_handling": (["keep_original", "pad_to_largest"],),  # 尺寸处理方式
             },
             "optional": {
                 "image2": ("IMAGE",),  # 第二张图片（可选）
@@ -347,12 +348,13 @@ class ImageBatchCombiner:
     FUNCTION = "combine_images"
     CATEGORY = "image/batch"
     
-    def combine_images(self, image1, image2=None, image3=None, image4=None, image5=None):
+    def combine_images(self, image1, size_handling, image2=None, image3=None, image4=None, image5=None):
         """
         将输入的图片组合成一个batch
         
         Args:
             image1: 第一张图片（必选）
+            size_handling: 尺寸处理方式（keep_original保持原尺寸，pad_to_largest填充到最大尺寸）
             image2-image5: 其他图片（可选）
             
         Returns:
@@ -403,17 +405,60 @@ class ImageBatchCombiner:
                     img = img[:, :, :3]
             final_images.append(img)
         
-        # 组合成batch - 保持每张图片的原始尺寸
-        result_batch = torch.stack(final_images, dim=0)
+        # 检查所有图片是否具有相同的尺寸
+        first_shape = final_images[0].shape[:2]  # 获取高度和宽度
+        same_size = all(img.shape[:2] == first_shape for img in final_images)
         
         print(f"🔄 图片批量组合完成:")
         print(f"   输入图片数量: {len(final_images)}")
-        print(f"   输出batch形状: {result_batch.shape}")
         print(f"   各图片尺寸:")
         for i, img in enumerate(final_images):
             print(f"     图片{i+1}: {img.shape[1]}×{img.shape[0]}×{img.shape[2]}")
         
-        return (result_batch,)
+        if same_size:
+            # 所有图片尺寸相同，可以使用标准batch格式
+            result_batch = torch.stack(final_images, dim=0)
+            print(f"   ✅ 尺寸一致，输出batch形状: {result_batch.shape}")
+            return (result_batch,)
+        else:
+            # 图片尺寸不同，根据用户选择的处理方式
+            if size_handling == "keep_original":
+                # 保持原始尺寸 - 返回第一张图片并警告
+                print(f"   ⚠️  图片尺寸不同，选择保持原始尺寸模式")
+                print(f"   ❌ 由于ComfyUI batch要求统一尺寸，只能返回第一张图片")
+                print(f"   建议：使用'pad_to_largest'模式或确保输入图片尺寸相同")
+                
+                # 只返回第一张图片作为batch
+                result_batch = final_images[0].unsqueeze(0)
+                print(f"   📤 输出第一张图片，batch形状: {result_batch.shape}")
+                return (result_batch,)
+            
+            elif size_handling == "pad_to_largest":
+                # 填充到最大尺寸模式
+                max_height = max(img.shape[0] for img in final_images)
+                max_width = max(img.shape[1] for img in final_images)
+                channels = final_images[0].shape[2]
+                
+                print(f"   ⚠️  图片尺寸不同，将填充到统一尺寸: {max_height}×{max_width}")
+                
+                # 创建填充后的图片列表
+                padded_images = []
+                for i, img in enumerate(final_images):
+                    h, w, c = img.shape
+                    
+                    # 创建全零的目标尺寸张量（黑色填充）
+                    padded_img = torch.zeros(max_height, max_width, c, dtype=img.dtype, device=img.device)
+                    
+                    # 将原图片放在左上角
+                    padded_img[:h, :w, :] = img
+                    
+                    padded_images.append(padded_img)
+                    print(f"     图片{i+1}: {w}×{h} → {max_width}×{max_height} (黑色填充)")
+                
+                # 现在所有图片尺寸相同，可以使用stack
+                result_batch = torch.stack(padded_images, dim=0)
+                print(f"   ✅ 填充完成，输出batch形状: {result_batch.shape}")
+                return (result_batch,)
 
 
 # 节点映射
